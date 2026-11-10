@@ -26,14 +26,12 @@ def start_message(message):
 
 @bot.message_handler(commands=['gen'])
 def generate(message):
-    msg = bot.send_message(message.chat.id, "⚙️ Compiling Multi-Clip Viral Fact Video... (takes ~2-3 mins)")
+    msg = bot.send_message(message.chat.id, "⚙️ Compiling Viral Video (Optimized for Free Server)...")
     try:
-        # 1. New Viral "Funny Fact" Script
         script_text = "Here are three weird facts that sound completely fake! Number one. Did you know a group of pugs is actually called a grumble? Imagine a grumble of dogs judging you! Number two. Bananas are technically berries, but strawberries are not. Science is weird. Number three. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more crazy facts!"
         asyncio.run(edge_tts.Communicate(script_text, "en-US-ChristopherNeural").save("audio.mp3"))
         audio = AudioFileClip("audio.mp3")
 
-        # 2. Fetch Multiple Clips Dynamically
         search_terms = ["funny dog", "banana", "octopus", "happy"]
         video_clips = []
         
@@ -41,7 +39,8 @@ def generate(message):
             url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q={term.replace(' ', '+')}&video_type=film"
             res = requests.get(url).json()
             if res['hits']:
-                vid_url = res['hits'][0]['videos']['medium']['url']
+                # CRITICAL FIX: Using 'small' video to prevent free server from crashing
+                vid_url = res['hits'][0]['videos']['small']['url']
                 vid_path = f"vid_{i}.mp4"
                 with open(vid_path, "wb") as f: 
                     f.write(requests.get(vid_url).content)
@@ -50,15 +49,12 @@ def generate(message):
                 w, h = clip.size
                 target_w = int(h * (9/16))
                 
-                # Crop to vertical and limit each clip to 6 seconds for fast pacing
                 clip = clip.fx(vfx.crop, width=target_w, height=h, x_center=w/2, y_center=h/2)
                 clip = clip.subclip(0, min(clip.duration, 6))
                 video_clips.append(clip)
 
-        # 3. Stitch Clips Together
         final_visuals = concatenate_videoclips(video_clips, method="compose")
         
-        # Match visual length to audio length
         if final_visuals.duration < audio.duration:
             final_visuals = final_visuals.fx(vfx.loop, duration=audio.duration)
         else:
@@ -66,10 +62,9 @@ def generate(message):
             
         final_video = final_visuals.set_audio(audio)
         
-        # Optimized for fast cloud rendering (FPS lowered to 24 to save server memory)
-        final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24, preset="ultrafast", logger=None)
+        # CRITICAL FIX: threads=1 stops the server from overloading its CPU
+        final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24, preset="ultrafast", threads=1, logger=None)
         
-        # 4. Send to Telegram
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("✅ Approve & Upload", callback_data="upload"), 
                    InlineKeyboardButton("❌ Trash", callback_data="trash"))
