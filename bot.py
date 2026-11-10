@@ -4,7 +4,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import asyncio
 import edge_tts
-from moviepy.editor import VideoFileClip, AudioFileClip
+from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 import moviepy.video.fx.all as vfx
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -26,32 +26,48 @@ def start_message(message):
 
 @bot.message_handler(commands=['gen'])
 def generate(message):
-    msg = bot.send_message(message.chat.id, "⚙️ Compiling Full Vertical Video... (takes ~2 mins)")
+    msg = bot.send_message(message.chat.id, "⚙️ Compiling Multi-Clip Viral Fact Video... (takes ~2-3 mins)")
     try:
-        # 1. Generate Full 40-Second Voice
-        script_text = """Most people think painkillers know exactly where your pain is, but your medicine is actually completely blind. When you swallow a tablet for a headache, it dissolves in your stomach and enters your entire bloodstream. It travels everywhere, from your toes to your brain. So how does it stop the pain? Whenever cells in your body get damaged, they release special chemical alarm signals called prostaglandins. Painkillers simply float through your blood and block the enzymes that make these alarm chemicals everywhere in your body. You only feel the relief in your head because that is the only place where the alarm was ringing."""
+        # 1. New Viral "Funny Fact" Script
+        script_text = "Here are three weird facts that sound completely fake! Number one. Did you know a group of pugs is actually called a grumble? Imagine a grumble of dogs judging you! Number two. Bananas are technically berries, but strawberries are not. Science is weird. Number three. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more crazy facts!"
         asyncio.run(edge_tts.Communicate(script_text, "en-US-ChristopherNeural").save("audio.mp3"))
-        
-        # 2. Fetch Video
-        url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q=medicine&video_type=film"
-        vid_url = requests.get(url).json()['hits'][0]['videos']['medium']['url']
-        with open("bg.mp4", "wb") as f: 
-            f.write(requests.get(vid_url).content)
-        
-        # 3. Merge & Force Vertical 9:16 Crop
         audio = AudioFileClip("audio.mp3")
-        video = VideoFileClip("bg.mp4")
+
+        # 2. Fetch Multiple Clips Dynamically
+        search_terms = ["funny dog", "banana", "octopus", "happy"]
+        video_clips = []
         
-        # Crop video to YouTube Shorts vertical ratio (9:16)
-        w, h = video.size
-        target_w = int(h * (9/16))
-        video = video.fx(vfx.crop, width=target_w, height=h, x_center=w/2, y_center=h/2)
+        for i, term in enumerate(search_terms):
+            url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q={term.replace(' ', '+')}&video_type=film"
+            res = requests.get(url).json()
+            if res['hits']:
+                vid_url = res['hits'][0]['videos']['medium']['url']
+                vid_path = f"vid_{i}.mp4"
+                with open(vid_path, "wb") as f: 
+                    f.write(requests.get(vid_url).content)
+                
+                clip = VideoFileClip(vid_path)
+                w, h = clip.size
+                target_w = int(h * (9/16))
+                
+                # Crop to vertical and limit each clip to 6 seconds for fast pacing
+                clip = clip.fx(vfx.crop, width=target_w, height=h, x_center=w/2, y_center=h/2)
+                clip = clip.subclip(0, min(clip.duration, 6))
+                video_clips.append(clip)
+
+        # 3. Stitch Clips Together
+        final_visuals = concatenate_videoclips(video_clips, method="compose")
         
-        # Loop video to match the 40-second audio
-        video = video.fx(vfx.loop, duration=audio.duration)
-        final_video = video.set_audio(audio)
+        # Match visual length to audio length
+        if final_visuals.duration < audio.duration:
+            final_visuals = final_visuals.fx(vfx.loop, duration=audio.duration)
+        else:
+            final_visuals = final_visuals.set_duration(audio.duration)
+            
+        final_video = final_visuals.set_audio(audio)
         
-        final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=30, preset="ultrafast", logger=None)
+        # Optimized for fast cloud rendering (FPS lowered to 24 to save server memory)
+        final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24, preset="ultrafast", logger=None)
         
         # 4. Send to Telegram
         markup = InlineKeyboardMarkup()
@@ -59,7 +75,7 @@ def generate(message):
                    InlineKeyboardButton("❌ Trash", callback_data="trash"))
         
         with open("final.mp4", "rb") as vid:
-            bot.send_video(message.chat.id, vid, caption="Review your new Short:", reply_markup=markup)
+            bot.send_video(message.chat.id, vid, caption="Review your new Viral Short:", reply_markup=markup)
         bot.delete_message(message.chat.id, msg.message_id)
         
     except Exception as e:
