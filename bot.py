@@ -4,8 +4,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import asyncio
 import edge_tts
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
-import moviepy.video.fx.all as vfx
+import subprocess
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 PIXABAY_KEY = os.environ.get("PIXABAY_KEY")
@@ -26,54 +25,35 @@ def start_message(message):
 
 @bot.message_handler(commands=['gen'])
 def generate(message):
-    msg = bot.send_message(message.chat.id, "⚙️ Compiling Light-Weight Viral Video...")
+    msg = bot.send_message(message.chat.id, "⚡ Compiling via Lightning FFmpeg Engine...")
     try:
-        # Shortened viral script designed for 2 clips
-        script_text = "Here are two weird facts that sound fake! Number one. Did you know a group of pugs is called a grumble? Imagine a grumble of dogs judging you! Number two. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more!"
+        # 1. Generate Voice (Trending Fun Facts)
+        script_text = "Here are two weird facts that sound completely fake! Number one. Did you know a group of pugs is called a grumble? Number two. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more crazy facts!"
         asyncio.run(edge_tts.Communicate(script_text, "en-US-ChristopherNeural").save("audio.mp3"))
-        audio = AudioFileClip("audio.mp3")
 
-        # Fetch only 2 clips to safely fit inside the 512MB RAM limit
-        search_terms = ["funny dog", "octopus"]
-        video_clips = []
-        
-        for i, term in enumerate(search_terms):
-            url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q={term.replace(' ', '+')}&video_type=film"
-            res = requests.get(url).json()
-            if res['hits']:
-                # CRITICAL FIX: Pulling the 'tiny' file size to save memory
-                vid_url = res['hits'][0]['videos']['tiny']['url']
-                vid_path = f"vid_{i}.mp4"
-                with open(vid_path, "wb") as f: 
-                    f.write(requests.get(vid_url).content)
-                
-                clip = VideoFileClip(vid_path)
-                
-                # CRITICAL FIX: Force aggressive resize to 640px height before processing
-                clip = clip.resize(height=640)
-                w, h = clip.size
-                target_w = int(h * (9/16))
-                
-                clip = clip.fx(vfx.crop, width=target_w, height=h, x_center=w/2, y_center=h/2)
-                
-                # Cut each clip to exactly half the length of the audio
-                clip = clip.subclip(0, min(clip.duration, audio.duration / 2))
-                video_clips.append(clip)
+        # 2. Fetch 1 High-Retention "Satisfying" Background (Meta for Fact Shorts)
+        url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q=satisfying+slime&video_type=film"
+        res = requests.get(url).json()
+        vid_url = res['hits'][0]['videos']['medium']['url']
+        with open("bg.mp4", "wb") as f: 
+            f.write(requests.get(vid_url).content)
 
-        # Stitch the 2 clips
-        final_visuals = concatenate_videoclips(video_clips, method="compose")
-        final_visuals = final_visuals.set_duration(audio.duration)
-        final_video = final_visuals.set_audio(audio)
+        # 3. Direct FFmpeg Command (20x faster than MoviePy on a free server)
+        # This crops to 9:16 vertical, loops the video, stops at audio length, and merges instantly.
+        ffmpeg_cmd = (
+            'ffmpeg -y -stream_loop -1 -i bg.mp4 -i audio.mp3 '
+            '-filter_complex "[0:v]crop=ih*9/16:ih:(iw-ih*9/16)/2:0[v]" '
+            '-map "[v]" -map 1:a -c:v libx264 -preset ultrafast -c:a aac -shortest final.mp4'
+        )
+        subprocess.run(ffmpeg_cmd, shell=True, check=True)
         
-        # Ultra-fast rendering on a single thread to prevent CPU spike
-        final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24, preset="ultrafast", threads=1, logger=None)
-        
+        # 4. Send to Telegram
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("✅ Approve & Upload", callback_data="upload"), 
                    InlineKeyboardButton("❌ Trash", callback_data="trash"))
         
         with open("final.mp4", "rb") as vid:
-            bot.send_video(message.chat.id, vid, caption="Review your new Viral Short:", reply_markup=markup)
+            bot.send_video(message.chat.id, vid, caption="Review your Fast Viral Short:", reply_markup=markup)
         bot.delete_message(message.chat.id, msg.message_id)
         
     except Exception as e:
