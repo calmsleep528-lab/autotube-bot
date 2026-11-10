@@ -26,43 +26,46 @@ def start_message(message):
 
 @bot.message_handler(commands=['gen'])
 def generate(message):
-    msg = bot.send_message(message.chat.id, "⚙️ Compiling Viral Video (Optimized for Free Server)...")
+    msg = bot.send_message(message.chat.id, "⚙️ Compiling Light-Weight Viral Video...")
     try:
-        script_text = "Here are three weird facts that sound completely fake! Number one. Did you know a group of pugs is actually called a grumble? Imagine a grumble of dogs judging you! Number two. Bananas are technically berries, but strawberries are not. Science is weird. Number three. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more crazy facts!"
+        # Shortened viral script designed for 2 clips
+        script_text = "Here are two weird facts that sound fake! Number one. Did you know a group of pugs is called a grumble? Imagine a grumble of dogs judging you! Number two. An octopus has three hearts, and their blood is literally blue. Hit subscribe for more!"
         asyncio.run(edge_tts.Communicate(script_text, "en-US-ChristopherNeural").save("audio.mp3"))
         audio = AudioFileClip("audio.mp3")
 
-        search_terms = ["funny dog", "banana", "octopus", "happy"]
+        # Fetch only 2 clips to safely fit inside the 512MB RAM limit
+        search_terms = ["funny dog", "octopus"]
         video_clips = []
         
         for i, term in enumerate(search_terms):
             url = f"https://pixabay.com/api/videos/?key={PIXABAY_KEY}&q={term.replace(' ', '+')}&video_type=film"
             res = requests.get(url).json()
             if res['hits']:
-                # CRITICAL FIX: Using 'small' video to prevent free server from crashing
-                vid_url = res['hits'][0]['videos']['small']['url']
+                # CRITICAL FIX: Pulling the 'tiny' file size to save memory
+                vid_url = res['hits'][0]['videos']['tiny']['url']
                 vid_path = f"vid_{i}.mp4"
                 with open(vid_path, "wb") as f: 
                     f.write(requests.get(vid_url).content)
                 
                 clip = VideoFileClip(vid_path)
+                
+                # CRITICAL FIX: Force aggressive resize to 640px height before processing
+                clip = clip.resize(height=640)
                 w, h = clip.size
                 target_w = int(h * (9/16))
                 
                 clip = clip.fx(vfx.crop, width=target_w, height=h, x_center=w/2, y_center=h/2)
-                clip = clip.subclip(0, min(clip.duration, 6))
+                
+                # Cut each clip to exactly half the length of the audio
+                clip = clip.subclip(0, min(clip.duration, audio.duration / 2))
                 video_clips.append(clip)
 
+        # Stitch the 2 clips
         final_visuals = concatenate_videoclips(video_clips, method="compose")
-        
-        if final_visuals.duration < audio.duration:
-            final_visuals = final_visuals.fx(vfx.loop, duration=audio.duration)
-        else:
-            final_visuals = final_visuals.set_duration(audio.duration)
-            
+        final_visuals = final_visuals.set_duration(audio.duration)
         final_video = final_visuals.set_audio(audio)
         
-        # CRITICAL FIX: threads=1 stops the server from overloading its CPU
+        # Ultra-fast rendering on a single thread to prevent CPU spike
         final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24, preset="ultrafast", threads=1, logger=None)
         
         markup = InlineKeyboardMarkup()
