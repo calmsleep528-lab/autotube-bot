@@ -1,1 +1,5 @@
-# autotube-bot
+pyTelegramBotAPI
+requests
+edge-tts
+moviepy==1.0.3
+flask
